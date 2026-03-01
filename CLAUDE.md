@@ -42,20 +42,21 @@ npm run build        # Compile TypeScript
 ./container/build.sh # Rebuild agent container
 
 # After code changes: build + restart
-npm run build && sudo systemctl restart nanoclaw
+npm run build && pkill -f 'node.*nanoclaw/dist/index' && sleep 1 && sg docker -c 'node /home/av/nanoclaw/dist/index.js >> /tmp/nanoclaw.log 2>&1 &'
 ```
 
 Service management:
 ```bash
+# Linux — manual process (systemd service is disabled, user has no sudo)
+# sg docker is required because the shell may not inherit the docker group
+sg docker -c 'node /home/av/nanoclaw/dist/index.js >> /tmp/nanoclaw.log 2>&1 &'  # start
+pkill -f 'node.*nanoclaw/dist/index'                                              # stop
+pkill -f 'node.*nanoclaw/dist/index' && sleep 1 && sg docker -c 'node /home/av/nanoclaw/dist/index.js >> /tmp/nanoclaw.log 2>&1 &'  # restart
+
 # macOS (launchd)
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # restart
-
-# Linux (systemd) — system-level service
-sudo systemctl start nanoclaw
-sudo systemctl stop nanoclaw
-sudo systemctl restart nanoclaw
 ```
 
 ## Container Build Cache

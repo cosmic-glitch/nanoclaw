@@ -214,9 +214,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
-  await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
+  let typingShown = false;
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
@@ -228,6 +228,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       const text = formatOutbound(raw);
       if (text) {
+        if (!typingShown) {
+          await channel.setTyping?.(chatJid, true);
+          typingShown = true;
+        }
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
       }
@@ -244,7 +248,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   }, images);
 
-  await channel.setTyping?.(chatJid, false);
+  if (typingShown) await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
 
   if (output === 'error' || hadError) {
@@ -432,12 +436,6 @@ async function startMessageLoop(): Promise<void> {
             lastAgentTimestamp[chatJid] =
               messagesToSend[messagesToSend.length - 1].timestamp;
             saveState();
-            // Show typing indicator while the container processes the piped message
-            channel
-              .setTyping?.(chatJid, true)
-              ?.catch((err) =>
-                logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
-              );
           } else {
             // No active container — enqueue for a new one
             queue.enqueueMessageCheck(chatJid);
