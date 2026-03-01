@@ -166,7 +166,11 @@ export class GroupQueue {
       fs.writeFileSync(tempPath, JSON.stringify({ type: 'message', text }));
       fs.renameSync(tempPath, filepath);
       // Ensure container's node user (UID 1000) can delete the file
-      try { fs.chownSync(filepath, 1000, 1000); } catch { /* ignore */ }
+      try {
+        fs.chownSync(filepath, 1000, 1000);
+      } catch {
+        /* ignore */
+      }
       return true;
     } catch {
       return false;
@@ -185,7 +189,11 @@ export class GroupQueue {
       fs.mkdirSync(inputDir, { recursive: true });
       const closePath = path.join(inputDir, '_close');
       fs.writeFileSync(closePath, '');
-      try { fs.chownSync(closePath, 1000, 1000); } catch { /* ignore */ }
+      try {
+        fs.chownSync(closePath, 1000, 1000);
+      } catch {
+        /* ignore */
+      }
     } catch {
       // ignore
     }

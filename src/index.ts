@@ -218,35 +218,44 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   let outputSentToUser = false;
   let typingShown = false;
 
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
-      const text = formatOutbound(raw);
-      if (text) {
-        if (!typingShown) {
-          await channel.setTyping?.(chatJid, true);
-          typingShown = true;
+  const output = await runAgent(
+    group,
+    prompt,
+    chatJid,
+    async (result) => {
+      // Streaming output callback — called for each agent result
+      if (result.result) {
+        const raw =
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+        logger.info(
+          { group: group.name },
+          `Agent output: ${raw.slice(0, 200)}`,
+        );
+        const text = formatOutbound(raw);
+        if (text) {
+          if (!typingShown) {
+            await channel.setTyping?.(chatJid, true);
+            typingShown = true;
+          }
+          await channel.sendMessage(chatJid, text);
+          outputSentToUser = true;
         }
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
+        // Only reset idle timer on actual results, not session-update markers (result: null)
+        resetIdleTimer();
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
 
-    if (result.status === 'success') {
-      queue.notifyIdle(chatJid);
-    }
+      if (result.status === 'success') {
+        queue.notifyIdle(chatJid);
+      }
 
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  }, images);
+      if (result.status === 'error') {
+        hadError = true;
+      }
+    },
+    images,
+  );
 
   if (typingShown) await channel.setTyping?.(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);

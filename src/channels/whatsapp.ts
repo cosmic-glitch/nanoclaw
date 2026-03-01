@@ -224,12 +224,13 @@ export class WhatsAppChannel implements Channel {
           let media_mime_type: string | undefined;
           if (hasImage) {
             try {
-              const buffer = await downloadMediaMessage(
+              const buffer = (await downloadMediaMessage(
                 msg,
                 'buffer',
                 {},
-              ) as Buffer;
-              const mimetype = msg.message!.imageMessage!.mimetype || 'image/jpeg';
+              )) as Buffer;
+              const mimetype =
+                msg.message!.imageMessage!.mimetype || 'image/jpeg';
               const ext = mimetype.split('/')[1] || 'jpg';
               const mediaDir = path.join(STORE_DIR, 'media');
               fs.mkdirSync(mediaDir, { recursive: true });
