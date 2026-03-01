@@ -2,7 +2,7 @@
  * Container Runner for NanoClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, exec, spawn } from 'child_process';
+import { ChildProcess, exec, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -13,6 +13,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  STORE_DIR,
   TIMEZONE,
 } from './config.js';
 import { readEnvFile } from './env.js';
@@ -39,6 +40,7 @@ export interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   secrets?: Record<string, string>;
+  images?: Array<{ containerPath: string; mimeType: string }>;
 }
 
 export interface ContainerOutput {
@@ -109,6 +111,13 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+  // Ensure the sessions directory is owned by the container's node user (UID 1000)
+  // so the non-root container process can create files like .claude/debug/
+  try {
+    execSync(`chown -R 1000:1000 ${groupSessionsDir}`);
+  } catch {
+    // Ignore chown failures on non-root hosts
+  }
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
@@ -156,6 +165,12 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
+  // Ensure IPC directories are writable by the container's node user (UID 1000)
+  try {
+    execSync(`chown -R 1000:1000 ${groupIpcDir}`);
+  } catch {
+    // Ignore chown failures on non-root hosts
+  }
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',
@@ -196,6 +211,15 @@ function buildVolumeMounts(
     mounts.push(...validatedMounts);
   }
 
+  // Media directory (images downloaded from WhatsApp)
+  const mediaDir = path.join(STORE_DIR, 'media');
+  fs.mkdirSync(mediaDir, { recursive: true });
+  mounts.push({
+    hostPath: mediaDir,
+    containerPath: '/workspace/media',
+    readonly: true,
+  });
+
   return mounts;
 }
 
@@ -204,7 +228,7 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN']);
 }
 
 function buildContainerArgs(

@@ -6,6 +6,7 @@ import makeWASocket, {
   Browsers,
   DisconnectReason,
   WASocket,
+  downloadMediaMessage,
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
@@ -195,12 +196,13 @@ export class WhatsAppChannel implements Channel {
         // Only deliver full message for registered groups
         const groups = this.opts.registeredGroups();
         if (groups[chatJid]) {
+          const hasImage = !!msg.message?.imageMessage;
           const content =
             msg.message?.conversation ||
             msg.message?.extendedTextMessage?.text ||
             msg.message?.imageMessage?.caption ||
             msg.message?.videoMessage?.caption ||
-            '';
+            (hasImage ? '[Image]' : '');
 
           // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
           if (!content) continue;
@@ -217,6 +219,37 @@ export class WhatsAppChannel implements Channel {
             ? fromMe
             : content.startsWith(`${ASSISTANT_NAME}:`);
 
+          // Download image if present
+          let media_path: string | undefined;
+          let media_mime_type: string | undefined;
+          if (hasImage) {
+            try {
+              const buffer = await downloadMediaMessage(
+                msg,
+                'buffer',
+                {},
+              ) as Buffer;
+              const mimetype = msg.message!.imageMessage!.mimetype || 'image/jpeg';
+              const ext = mimetype.split('/')[1] || 'jpg';
+              const mediaDir = path.join(STORE_DIR, 'media');
+              fs.mkdirSync(mediaDir, { recursive: true });
+              const filename = `${msg.key.id}.${ext}`;
+              const filePath = path.join(mediaDir, filename);
+              fs.writeFileSync(filePath, buffer);
+              media_path = filePath;
+              media_mime_type = mimetype;
+              logger.info(
+                { chatJid, messageId: msg.key.id, size: buffer.length },
+                'Image downloaded',
+              );
+            } catch (err) {
+              logger.warn(
+                { chatJid, messageId: msg.key.id, err },
+                'Failed to download image, continuing with text only',
+              );
+            }
+          }
+
           this.opts.onMessage(chatJid, {
             id: msg.key.id || '',
             chat_jid: chatJid,
@@ -226,6 +259,8 @@ export class WhatsAppChannel implements Channel {
             timestamp,
             is_from_me: fromMe,
             is_bot_message: isBotMessage,
+            media_path,
+            media_mime_type,
           });
         }
       }

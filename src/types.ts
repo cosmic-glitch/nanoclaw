@@ -39,6 +39,7 @@ export interface RegisteredGroup {
   added_at: string;
   containerConfig?: ContainerConfig;
   requiresTrigger?: boolean; // Default: true for groups, false for solo chats
+  smartFilter?: boolean; // When true, use LLM to filter irrelevant messages
 }
 
 export interface NewMessage {
@@ -50,6 +51,8 @@ export interface NewMessage {
   timestamp: string;
   is_from_me?: boolean;
   is_bot_message?: boolean;
+  media_path?: string;
+  media_mime_type?: string;
 }
 
 export interface ScheduledTask {

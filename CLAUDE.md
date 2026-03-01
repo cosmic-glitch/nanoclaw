@@ -34,12 +34,15 @@ Single Node.js process that connects to WhatsApp, routes messages to Claude Agen
 
 ## Development
 
-Run commands directly—don't tell the user to run them.
+Run commands directly—don't tell the user to run them. After any code change, always build and restart the service to make changes live.
 
 ```bash
 npm run dev          # Run with hot reload
 npm run build        # Compile TypeScript
 ./container/build.sh # Rebuild agent container
+
+# After code changes: build + restart
+npm run build && sudo systemctl restart nanoclaw
 ```
 
 Service management:
@@ -49,10 +52,10 @@ launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # restart
 
-# Linux (systemd)
-systemctl --user start nanoclaw
-systemctl --user stop nanoclaw
-systemctl --user restart nanoclaw
+# Linux (systemd) — system-level service
+sudo systemctl start nanoclaw
+sudo systemctl stop nanoclaw
+sudo systemctl restart nanoclaw
 ```
 
 ## Container Build Cache
