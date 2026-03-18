@@ -171,6 +171,12 @@ export class GroupQueue {
       const tempPath = `${filepath}.tmp`;
       fs.writeFileSync(tempPath, JSON.stringify({ type: 'message', text }));
       fs.renameSync(tempPath, filepath);
+      // Ensure container's node user (UID 1000) can delete the file
+      try {
+        fs.chownSync(filepath, 1000, 1000);
+      } catch {
+        /* ignore */
+      }
       return true;
     } catch {
       return false;
@@ -187,7 +193,13 @@ export class GroupQueue {
     const inputDir = path.join(DATA_DIR, 'ipc', state.groupFolder, 'input');
     try {
       fs.mkdirSync(inputDir, { recursive: true });
-      fs.writeFileSync(path.join(inputDir, '_close'), '');
+      const closePath = path.join(inputDir, '_close');
+      fs.writeFileSync(closePath, '');
+      try {
+        fs.chownSync(closePath, 1000, 1000);
+      } catch {
+        /* ignore */
+      }
     } catch {
       // ignore
     }

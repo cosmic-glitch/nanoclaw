@@ -34,25 +34,28 @@ Single Node.js process with skill-based channel system. Channels (WhatsApp, Tele
 
 ## Development
 
-Run commands directly—don't tell the user to run them.
+Run commands directly—don't tell the user to run them. After any code change, always build and restart the service to make changes live.
 
 ```bash
 npm run dev          # Run with hot reload
 npm run build        # Compile TypeScript
 ./container/build.sh # Rebuild agent container
+
+# After code changes: build + restart
+npm run build && systemctl restart nanoclaw
 ```
 
 Service management:
 ```bash
+# Linux (systemd) — polkit rule allows av to manage nanoclaw.service without sudo
+systemctl start nanoclaw
+systemctl stop nanoclaw
+systemctl restart nanoclaw
+
 # macOS (launchd)
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl kickstart -k gui/$(id -u)/com.nanoclaw  # restart
-
-# Linux (systemd)
-systemctl --user start nanoclaw
-systemctl --user stop nanoclaw
-systemctl --user restart nanoclaw
 ```
 
 ## Troubleshooting

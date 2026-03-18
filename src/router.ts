@@ -1,3 +1,4 @@
+import { ASSISTANT_NAME } from './config.js';
 import { Channel, NewMessage } from './types.js';
 import { formatLocalTime } from './timezone.js';
 
@@ -16,7 +17,13 @@ export function formatMessages(
 ): string {
   const lines = messages.map((m) => {
     const displayTime = formatLocalTime(m.timestamp, timezone);
-    return `<message sender="${escapeXml(m.sender_name)}" time="${escapeXml(displayTime)}">${escapeXml(m.content)}</message>`;
+    const attrs = `sender="${escapeXml(m.sender_name)}" time="${escapeXml(displayTime)}"`;
+    let body = escapeXml(m.content);
+    if (m.media_path) {
+      const filename = m.media_path.split('/').pop() || '';
+      body += `\n<image path="/workspace/media/${escapeXml(filename)}" type="${escapeXml(m.media_mime_type || 'image/jpeg')}" />`;
+    }
+    return `<message ${attrs}>${body}</message>`;
   });
 
   const header = `<context timezone="${escapeXml(timezone)}" />\n`;
@@ -29,9 +36,12 @@ export function stripInternalTags(text: string): string {
 }
 
 export function formatOutbound(rawText: string): string {
-  const text = stripInternalTags(rawText);
+  let text = stripInternalTags(rawText);
   if (!text) return '';
-  return text;
+  // Strip "Bot:" or similar name prefix the LLM likes to add
+  const name = ASSISTANT_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  text = text.replace(new RegExp(`^${name}:\\s*`, 'im'), '');
+  return text.trim();
 }
 
 export function routeOutbound(

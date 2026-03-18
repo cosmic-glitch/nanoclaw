@@ -2,7 +2,7 @@
  * Container Runner for NanoClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, exec, spawn } from 'child_process';
+import { ChildProcess, exec, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,6 +14,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  STORE_DIR,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -26,6 +27,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readEnvFile } from './env.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -41,6 +43,7 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  images?: Array<{ containerPath: string; mimeType: string }>;
 }
 
 export interface ContainerOutput {
@@ -122,6 +125,13 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+  // Ensure the sessions directory is owned by the container's node user (UID 1000)
+  // so the non-root container process can create files like .claude/debug/
+  try {
+    execSync(`chown -R 1000:1000 ${groupSessionsDir}`);
+  } catch {
+    // Ignore chown failures on non-root hosts
+  }
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
@@ -169,6 +179,12 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
+  // Ensure IPC directories are writable by the container's node user (UID 1000)
+  try {
+    execSync(`chown -R 1000:1000 ${groupIpcDir}`);
+  } catch {
+    // Ignore chown failures on non-root hosts
+  }
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',
@@ -209,6 +225,15 @@ function buildVolumeMounts(
     mounts.push(...validatedMounts);
   }
 
+  // Media directory (images downloaded from WhatsApp)
+  const mediaDir = path.join(STORE_DIR, 'media');
+  fs.mkdirSync(mediaDir, { recursive: true });
+  mounts.push({
+    hostPath: mediaDir,
+    containerPath: '/workspace/media',
+    readonly: true,
+  });
+
   return mounts;
 }
 
@@ -221,21 +246,38 @@ function buildContainerArgs(
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
-  // Route API traffic through the credential proxy (containers never see real secrets)
-  args.push(
-    '-e',
-    `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`,
-  );
-
-  // Mirror the host's auth method with a placeholder value.
-  // API key mode: SDK sends x-api-key, proxy replaces with real key.
-  // OAuth mode:   SDK exchanges placeholder token for temp API key,
-  //               proxy injects real OAuth token on that exchange request.
+  // Mirror the host's auth method.
+  // API key mode: route through credential proxy so containers never see real secrets.
+  // OAuth mode:   pass real token directly and let the SDK use its native OAuth flow.
+  //               Max plan tokens lack org:create_api_key scope, so the proxy-based
+  //               exchange doesn't work. The SDK's native flow handles this correctly.
   const authMode = detectAuthMode();
   if (authMode === 'api-key') {
+    args.push(
+      '-e',
+      `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`,
+    );
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
-    args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+    // Read token fresh each time a container spawns. Prefer the auto-refreshed
+    // token from Claude Code's credentials file over the static .env value.
+    let oauthToken = '';
+    try {
+      const credsPath = path.join(
+        process.env.HOME || '/home/node',
+        '.claude',
+        '.credentials.json',
+      );
+      const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+      oauthToken = creds?.claudeAiOauth?.accessToken || '';
+    } catch {
+      // credentials.json not available, fall back to .env
+    }
+    if (!oauthToken) {
+      const secrets = readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN']);
+      oauthToken = secrets.CLAUDE_CODE_OAUTH_TOKEN || secrets.ANTHROPIC_AUTH_TOKEN || 'placeholder';
+    }
+    args.push('-e', `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}`);
   }
 
   // Runtime-specific args for host gateway resolution
