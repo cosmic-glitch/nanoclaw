@@ -274,8 +274,14 @@ function buildContainerArgs(
       // credentials.json not available, fall back to .env
     }
     if (!oauthToken) {
-      const secrets = readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN']);
-      oauthToken = secrets.CLAUDE_CODE_OAUTH_TOKEN || secrets.ANTHROPIC_AUTH_TOKEN || 'placeholder';
+      const secrets = readEnvFile([
+        'CLAUDE_CODE_OAUTH_TOKEN',
+        'ANTHROPIC_AUTH_TOKEN',
+      ]);
+      oauthToken =
+        secrets.CLAUDE_CODE_OAUTH_TOKEN ||
+        secrets.ANTHROPIC_AUTH_TOKEN ||
+        'placeholder';
     }
     args.push('-e', `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}`);
   }
