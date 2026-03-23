@@ -185,8 +185,10 @@ async function runTask(
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;
-          // Forward result to user (sendMessage handles formatting)
-          await deps.sendMessage(task.chat_jid, streamedOutput.result);
+          // Don't auto-forward the result — task prompts send messages
+          // via the send_message IPC tool. Forwarding the result too
+          // causes duplicate messages when the agent doesn't wrap its
+          // result in <internal> tags.
           scheduleClose();
         }
         if (streamedOutput.status === 'success') {

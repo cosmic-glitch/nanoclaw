@@ -205,12 +205,18 @@ export class WhatsAppChannel implements Channel {
           const groups = this.opts.registeredGroups();
           if (groups[chatJid]) {
             const hasImage = !!normalized.imageMessage;
+            const hasDocument = !!normalized.documentMessage;
+            const hasMedia = hasImage || hasDocument;
             const content =
               normalized.conversation ||
               normalized.extendedTextMessage?.text ||
               normalized.imageMessage?.caption ||
               normalized.videoMessage?.caption ||
-              (hasImage ? '[Image]' : '');
+              normalized.documentMessage?.caption ||
+              (hasImage ? '[Image]' : '') ||
+              (hasDocument
+                ? `[Document: ${normalized.documentMessage?.fileName || 'file'}]`
+                : '');
 
             // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
             if (!content) continue;
@@ -227,19 +233,33 @@ export class WhatsAppChannel implements Channel {
               ? fromMe
               : content.startsWith(`${ASSISTANT_NAME}:`);
 
-            // Download image if present
+            // Download media if present (images or documents/PDFs)
             let media_path: string | undefined;
             let media_mime_type: string | undefined;
-            if (hasImage) {
+            if (hasMedia) {
               try {
                 const buffer = (await downloadMediaMessage(
                   msg,
                   'buffer',
                   {},
                 )) as Buffer;
-                const mimetype =
-                  normalized.imageMessage!.mimetype || 'image/jpeg';
-                const ext = mimetype.split('/')[1] || 'jpg';
+                let mimetype: string;
+                let ext: string;
+                if (hasImage) {
+                  mimetype =
+                    normalized.imageMessage!.mimetype || 'image/jpeg';
+                  ext = mimetype.split('/')[1] || 'jpg';
+                } else {
+                  mimetype =
+                    normalized.documentMessage!.mimetype ||
+                    'application/octet-stream';
+                  ext =
+                    normalized.documentMessage!.fileName
+                      ?.split('.')
+                      .pop() ||
+                    mimetype.split('/')[1] ||
+                    'bin';
+                }
                 const mediaDir = path.join(STORE_DIR, 'media');
                 fs.mkdirSync(mediaDir, { recursive: true });
                 const filename = `${msg.key.id}.${ext}`;
@@ -248,13 +268,18 @@ export class WhatsAppChannel implements Channel {
                 media_path = filePath;
                 media_mime_type = mimetype;
                 logger.info(
-                  { chatJid, messageId: msg.key.id, size: buffer.length },
-                  'Image downloaded',
+                  {
+                    chatJid,
+                    messageId: msg.key.id,
+                    size: buffer.length,
+                    mimetype,
+                  },
+                  hasImage ? 'Image downloaded' : 'Document downloaded',
                 );
               } catch (err) {
                 logger.warn(
                   { chatJid, messageId: msg.key.id, err },
-                  'Failed to download image, continuing with text only',
+                  'Failed to download media, continuing with text only',
                 );
               }
             }

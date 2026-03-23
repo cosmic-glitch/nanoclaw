@@ -50,7 +50,8 @@ interface SessionsIndex {
 
 type ContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'document'; source: { type: 'base64'; media_type: string; data: string } };
 
 interface SDKUserMessage {
   type: 'user';
@@ -518,23 +519,24 @@ async function main(): Promise<void> {
       try {
         const buffer = fs.readFileSync(img.containerPath);
         const base64 = buffer.toString('base64');
+        const blockType = img.mimeType.startsWith('image/') ? 'image' : 'document';
         contentBlocks.push({
-          type: 'image',
+          type: blockType,
           source: {
             type: 'base64',
             media_type: img.mimeType,
             data: base64,
           },
-        });
-        log(`Loaded image: ${img.containerPath} (${buffer.length} bytes)`);
+        } as ContentBlock);
+        log(`Loaded ${blockType}: ${img.containerPath} (${buffer.length} bytes)`);
       } catch (err) {
-        log(`Failed to read image ${img.containerPath}: ${err instanceof Error ? err.message : String(err)}`);
+        log(`Failed to read media ${img.containerPath}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     if (contentBlocks.length > 0) {
       contentBlocks.push({ type: 'text', text: promptText });
       initialPrompt = contentBlocks;
-      log(`Built multimodal prompt with ${contentBlocks.length - 1} image(s)`);
+      log(`Built multimodal prompt with ${contentBlocks.length - 1} media block(s)`);
     }
   }
 

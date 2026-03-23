@@ -21,7 +21,9 @@ export function formatMessages(
     let body = escapeXml(m.content);
     if (m.media_path) {
       const filename = m.media_path.split('/').pop() || '';
-      body += `\n<image path="/workspace/media/${escapeXml(filename)}" type="${escapeXml(m.media_mime_type || 'image/jpeg')}" />`;
+      const mime = m.media_mime_type || 'image/jpeg';
+      const tag = mime.startsWith('image/') ? 'image' : 'document';
+      body += `\n<${tag} path="/workspace/media/${escapeXml(filename)}" type="${escapeXml(mime)}" />`;
     }
     return `<message ${attrs}>${body}</message>`;
   });

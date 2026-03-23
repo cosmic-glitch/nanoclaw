@@ -28,6 +28,7 @@ import {
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
 import { readEnvFile } from './env.js';
+import { getValidOAuthToken } from './oauth-refresh.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -237,10 +238,10 @@ function buildVolumeMounts(
   return mounts;
 }
 
-function buildContainerArgs(
+async function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
-): string[] {
+): Promise<string[]> {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Pass host timezone so container's local time matches the user's
@@ -259,21 +260,10 @@ function buildContainerArgs(
     );
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
-    // Read token fresh each time a container spawns. Prefer the auto-refreshed
-    // token from Claude Code's credentials file over the static .env value.
-    let oauthToken = '';
-    try {
-      const credsPath = path.join(
-        process.env.HOME || '/home/node',
-        '.claude',
-        '.credentials.json',
-      );
-      const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
-      oauthToken = creds?.claudeAiOauth?.accessToken || '';
-    } catch {
-      // credentials.json not available, fall back to .env
-    }
+    // Get a valid OAuth token, refreshing automatically if expired.
+    let oauthToken = await getValidOAuthToken();
     if (!oauthToken) {
+      // Fall back to static .env value
       const secrets = readEnvFile([
         'CLAUDE_CODE_OAUTH_TOKEN',
         'ANTHROPIC_AUTH_TOKEN',
@@ -326,7 +316,7 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName);
+  const containerArgs = await buildContainerArgs(mounts, containerName);
 
   logger.debug(
     {
